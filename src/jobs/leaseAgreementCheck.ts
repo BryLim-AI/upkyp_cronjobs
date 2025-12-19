@@ -1,6 +1,7 @@
 import { pool } from "../db/pool";
+import type { RowDataPacket } from "mysql2/promise";
 
-type LeaseRow = {
+type LeaseRow = RowDataPacket & {
     agreement_id: number;
     tenant_id: number;
     unit_id: number;
