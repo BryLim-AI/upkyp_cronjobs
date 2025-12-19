@@ -1,4 +1,3 @@
-import "dotenv/config";
 import { pool } from "../db/pool";
 
 type LeaseRow = {
@@ -21,36 +20,16 @@ export async function processLeaseExpirations() {
         /* ===============================
            1️⃣ EXPIRE PAST-DUE LEASES
         =============================== */
-        const [expiredLeases] = await connection.query<LeaseRow[]>(
+        await connection.query(
             `
-      SELECT agreement_id
-      FROM LeaseAgreement
+      UPDATE LeaseAgreement
+      SET status = 'expired',
+          updated_at = NOW()
       WHERE status = 'active'
         AND end_date < ?
       `,
             [today]
         );
-
-        if (expiredLeases.length > 0) {
-            console.log(
-                `⚠️ Found ${expiredLeases.length} lease(s) to expire.`
-            );
-
-            await connection.query(
-                `
-        UPDATE LeaseAgreement
-        SET status = 'expired',
-            updated_at = NOW()
-        WHERE status = 'active'
-          AND end_date < ?
-        `,
-                [today]
-            );
-
-            console.log("✅ Expired leases updated successfully.");
-        } else {
-            console.log("✅ No leases to expire.");
-        }
 
         /* ===============================
            2️⃣ LEASES ENDING IN 60 DAYS
@@ -66,46 +45,25 @@ export async function processLeaseExpirations() {
             [today, today]
         );
 
-        if (renewalLeases.length === 0) {
-            console.log("ℹ️ No leases within renewal window.");
-            return;
-        }
-
-        console.log(
-            `📣 Found ${renewalLeases.length} lease(s) eligible for renewal.`
-        );
-
         for (const lease of renewalLeases) {
-            try {
-                /* OPTIONAL: Insert notification / renewal marker */
-                await connection.query(
-                    `
-          INSERT INTO Notification (user_id, title, body, created_at)
-          SELECT
-            u.user_id,
-            'Lease Ending Soon',
-            CONCAT(
-              'Your lease will end on ',
-              DATE_FORMAT(?, '%M %d, %Y'),
-              '. You may now request a renewal.'
-            ),
-            NOW()
-          FROM Tenant t
-          JOIN User u ON u.user_id = t.user_id
-          WHERE t.tenant_id = ?
-          `,
-                    [lease.end_date, lease.tenant_id]
-                );
-
-                console.log(
-                    `📨 Renewal notice sent for agreement_id: ${lease.agreement_id}`
-                );
-            } catch (err: any) {
-                console.error(
-                    `❌ Failed processing renewal for agreement_id ${lease.agreement_id}:`,
-                    err.message
-                );
-            }
+            await connection.query(
+                `
+        INSERT INTO Notification (user_id, title, body, created_at)
+        SELECT
+          u.user_id,
+          'Lease Ending Soon',
+          CONCAT(
+            'Your lease will end on ',
+            DATE_FORMAT(?, '%M %d, %Y'),
+            '. You may now request a renewal.'
+          ),
+          NOW()
+        FROM Tenant t
+        JOIN User u ON u.user_id = t.user_id
+        WHERE t.tenant_id = ?
+        `,
+                [lease.end_date, lease.tenant_id]
+            );
         }
 
         console.log("🎯 Lease expiration cron completed successfully.");
@@ -113,17 +71,3 @@ export async function processLeaseExpirations() {
         connection.release();
     }
 }
-
-/**
- * Cron entry point
- * (Vercel / cron-job.org safe)
- */
-(async () => {
-    try {
-        await processLeaseExpirations();
-        process.exit(0);
-    } catch (err) {
-        console.error("❌ Lease cron crashed:", err);
-        process.exit(1);
-    }
-})();
