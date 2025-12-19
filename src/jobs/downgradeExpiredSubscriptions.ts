@@ -1,7 +1,7 @@
-import "dotenv/config";
 import { pool } from "../db/pool";
+import type { RowDataPacket } from "mysql2/promise";
 
-type ExpiredSubscriptionRow = {
+type ExpiredSubscriptionRow = RowDataPacket & {
     landlord_id: number;
 };
 
@@ -68,17 +68,3 @@ export async function downgradeExpiredSubscriptions() {
         connection.release();
     }
 }
-
-/**
- * Render cron entry point
- * (run once, then exit)
- */
-(async () => {
-    try {
-        await downgradeExpiredSubscriptions();
-        process.exit(0);
-    } catch (err) {
-        console.error("❌ Cron job crashed:", err);
-        process.exit(1);
-    }
-})();
